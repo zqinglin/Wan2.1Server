@@ -1,0 +1,50 @@
+# Test Configuration for Dance Video Reconstruction
+# Extracted from dance.mp4 using extract_keyframes.py
+
+keyframes:
+  - ["examples/dance_keyframes_5frames/frame_001.png", 0.0]
+  - ["examples/dance_keyframes_5frames/frame_002.png", 2.0]
+  - ["examples/dance_keyframes_5frames/frame_003.png", 4.0]
+  - ["examples/dance_keyframes_5frames/frame_004.png", 6.0]
+  - ["examples/dance_keyframes_5frames/frame_005.png", 8.0]
+
+# Global prompt describing the overall video 
+prompt: "Street Dance performance, smooth fluid movements, dynamic choreography, cinematic style, high quality, 4k"
+
+# Segment-specific prompts (optional, one per segment)
+sub_prompts:
+  - "The dancer starts with a controlled pose, initiating a rhythmic sequence centered on precise footwork. His legs glide and pivot smoothly, executing quick steps and slides with sharp timing. The movement builds anticipation as momentum gathers from the ground up."
+  - "The dancer transitions into more intense breaking footwork—rapid kicks, spins, and fluid direction changes. His feet tap and twist in sync with the beat, alternating between low sweeping motions and explosive bursts of energy. The sequence flows continuously, emphasizing speed and balance."
+  - "The camera gradually tilts upward from the dancer’s fast-moving feet to his upper body, maintaining continuous motion. As the shot rises, the dancer keeps performing—smoothly linking footwork into a powerful torso twist and arm extension. The movement stays fluid and uninterrupted, capturing the transition from lower to upper-body energy in one seamless flow."
+  - "The dancer shifts focus to upper-body dynamics, performing powerful freezes, headspins, and arm-driven transitions. His torso and arms move with strength and control, locking sharply between poses before releasing into fluid motions. The sequence ends with a strong upper-body finish and expressive gesture."
+
+
+# Model configuration
+ckpt_dir: "/data1/huangwenlei/Code/Wan2.1-FLF2V-14B-720P"
+size: "1280*720"
+fps: 12
+
+# Generation parameters
+sample_steps: 50              # Number of sampling steps
+sample_shift: 16.0            # Sampling shift factor for FLF2V
+sample_guide_scale: 5.0       # Classifier-free guidance scale
+base_seed: 42                 # Random seed for reproducibility
+
+# Performance settings
+num_gpus: 4                  # Number of GPUs (change to 4 for parallel)
+gpu_ids: [0,1,2,3]      # Specify GPU IDs， CUDA_VISIBLE_DEVICES is ignored in our code
+offload_model: false          # Set to true if OOM
+t5_cpu: false                 # Set to true if OOM
+
+# Post-processing
+enable_smoothing: true
+smoothing_method: "temporal_filter"
+
+# Output settings
+output: "examples/dance_reconstructed_longprompt.mp4"
+output_dir: "./outputs_dance_reconstructed_longprompt"
+keep_intermediates: false
+
+# Advanced
+force_regenerate: false
+verbose: false

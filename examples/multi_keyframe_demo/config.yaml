@@ -1,0 +1,51 @@
+# Multi-Keyframe Video Generation Configuration
+# This is an example configuration file for the multi-keyframe pipeline
+
+# Keyframes: list of [frame_path, timestamp_in_seconds]
+# Timestamps should be in chronological order
+keyframes:
+  - ["keyframes/frame_001.png", 0.0]
+  - ["keyframes/frame_002.png", 2.5]
+  - ["keyframes/frame_003.png", 5.0]
+  - ["keyframes/frame_004.png", 8.0]
+
+# Global prompt: applies to all segments
+prompt: "A beautiful journey through magical landscapes, cinematic style, high quality, 4k"
+
+# Sub-prompts: optional segment-specific descriptions (one per segment)
+# Number of sub-prompts should be len(keyframes) - 1
+sub_prompts:
+  - "Starting in a misty forest at dawn, soft morning light filtering through trees"
+  - "Transitioning to a sunlit meadow with colorful butterflies and wildflowers"
+  - "Ending at a majestic mountain peak at sunset with golden hour lighting"
+
+# Model configuration
+ckpt_dir: "/data1/huangwenlei/Code/Wan2.1-FLF2V-14B-720P"  # Path to model checkpoint
+size: "1280*720"      # Video resolution (width*height)
+fps: 24               # Frames per second
+
+# Generation parameters
+sample_steps: 50              # Number of sampling steps (null for auto)
+sample_shift: 16.0            # Sampling shift factor (null for auto)
+sample_guide_scale: 5.0       # Classifier-free guidance scale
+base_seed: 42                 # Random seed (-1 for random)
+
+# Performance settings
+num_gpus: 1           # Number of GPUs for parallel generation
+gpu_ids: null         # Specific GPU IDs (null for auto: 0 to num_gpus-1)
+offload_model: false  # Offload model to CPU to save VRAM
+t5_cpu: false         # Keep T5 encoder on CPU
+
+# Post-processing
+enable_smoothing: true           # Enable video smoothing
+smoothing_method: "temporal_filter"  # Options: temporal_filter, optical_flow, none
+
+# Output settings
+output: "./output_final.mp4"
+output_dir: "./outputs"
+keep_intermediates: false  # Keep segment files and intermediate videos
+
+# Advanced options
+force_regenerate: false  # Force regeneration of existing segments
+resume_from: null        # Resume from specific segment ID (null to start from beginning)
+verbose: false           # Enable verbose logging
