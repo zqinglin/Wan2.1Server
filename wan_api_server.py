@@ -4,7 +4,7 @@ import base64
 from io import BytesIO
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from PIL import Image
@@ -17,6 +17,16 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 app = FastAPI(title="WAN 2.1 Adapter")
 app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
+
+# Public base URL for absolute links (e.g., behind reverse proxy)
+PUBLIC_BASE = os.getenv("WAN_PUBLIC_BASE_URL", "").rstrip("/")
+
+def _to_abs_url(request: Request, rel_path: str) -> str:
+    if PUBLIC_BASE:
+        return f"{PUBLIC_BASE}{rel_path}"
+    # Fallback to request base URL
+    base = str(request.base_url).rstrip("/")
+    return f"{base}{rel_path}"
 
 
 class T2VRequest(BaseModel):
@@ -74,33 +84,36 @@ def _run_exclusive(func, *args, **kwargs):
         GPU_LOCK.release()
 
 @app.post("/t2v")
-def t2v(req: T2VRequest):
+def t2v(req: T2VRequest, request: Request):
     cmd = os.getenv("WAN_CMD_T2V")
     if not cmd:
         raise HTTPException(status_code=503, detail="WAN_CMD_T2V is not set")
     out_path = _run_exclusive(_run_command, cmd, prompt=req.prompt)
-    return {"video_url": f"/outputs/{os.path.basename(out_path)}"}
+    rel = f"/outputs/{os.path.basename(out_path)}"
+    return {"video_url": _to_abs_url(request, rel)}
 
 
 @app.post("/ff2v")
-def ff2v(req: FF2VRequest):
+def ff2v(req: FF2VRequest, request: Request):
     cmd = os.getenv("WAN_CMD_FF2V")
     if not cmd:
         raise HTTPException(status_code=503, detail="WAN_CMD_FF2V is not set")
     ff_path = _decode_image_to_path(req.first_frame)
     out_path = _run_exclusive(_run_command, cmd, prompt=req.prompt, first_frame=ff_path)
-    return {"video_url": f"/outputs/{os.path.basename(out_path)}"}
+    rel = f"/outputs/{os.path.basename(out_path)}"
+    return {"video_url": _to_abs_url(request, rel)}
 
 
 @app.post("/flf2v")
-def flf2v(req: FLF2VRequest):
+def flf2v(req: FLF2VRequest, request: Request):
     cmd = os.getenv("WAN_CMD_FLF2V")
     if not cmd:
         raise HTTPException(status_code=503, detail="WAN_CMD_FLF2V is not set")
     ff_path = _decode_image_to_path(req.first_frame)
     lf_path = _decode_image_to_path(req.last_frame)
     out_path = _run_exclusive(_run_command, cmd, prompt=req.prompt, first_frame=ff_path, last_frame=lf_path)
-    return {"video_url": f"/outputs/{os.path.basename(out_path)}"}
+    rel = f"/outputs/{os.path.basename(out_path)}"
+    return {"video_url": _to_abs_url(request, rel)}
 
 
 # Run with uv:
