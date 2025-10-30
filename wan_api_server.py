@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from PIL import Image
 import subprocess
+import threading
 
 
 OUTPUT_DIR = os.getenv("WAN_OUTPUT_DIR", os.path.abspath(".wan_outputs"))
@@ -62,12 +63,22 @@ def _run_command(cmd_template: str, **kwargs) -> str:
     return output_path
 
 
+# Ensure single in-flight generation to avoid GPU OOM from concurrent loads
+GPU_LOCK = threading.Lock()
+
+def _run_exclusive(func, *args, **kwargs):
+    GPU_LOCK.acquire()
+    try:
+        return func(*args, **kwargs)
+    finally:
+        GPU_LOCK.release()
+
 @app.post("/t2v")
 def t2v(req: T2VRequest):
     cmd = os.getenv("WAN_CMD_T2V")
     if not cmd:
         raise HTTPException(status_code=503, detail="WAN_CMD_T2V is not set")
-    out_path = _run_command(cmd, prompt=req.prompt)
+    out_path = _run_exclusive(_run_command, cmd, prompt=req.prompt)
     return {"video_url": f"/outputs/{os.path.basename(out_path)}"}
 
 
@@ -77,7 +88,7 @@ def ff2v(req: FF2VRequest):
     if not cmd:
         raise HTTPException(status_code=503, detail="WAN_CMD_FF2V is not set")
     ff_path = _decode_image_to_path(req.first_frame)
-    out_path = _run_command(cmd, prompt=req.prompt, first_frame=ff_path)
+    out_path = _run_exclusive(_run_command, cmd, prompt=req.prompt, first_frame=ff_path)
     return {"video_url": f"/outputs/{os.path.basename(out_path)}"}
 
 
@@ -88,7 +99,7 @@ def flf2v(req: FLF2VRequest):
         raise HTTPException(status_code=503, detail="WAN_CMD_FLF2V is not set")
     ff_path = _decode_image_to_path(req.first_frame)
     lf_path = _decode_image_to_path(req.last_frame)
-    out_path = _run_command(cmd, prompt=req.prompt, first_frame=ff_path, last_frame=lf_path)
+    out_path = _run_exclusive(_run_command, cmd, prompt=req.prompt, first_frame=ff_path, last_frame=lf_path)
     return {"video_url": f"/outputs/{os.path.basename(out_path)}"}
 
 
