@@ -9,7 +9,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from PIL import Image
 import subprocess
+import shlex
+import re
 import threading
+from PIL import UnidentifiedImageError
 
 
 OUTPUT_DIR = os.getenv("WAN_OUTPUT_DIR", os.path.abspath(".wan_outputs"))
@@ -64,12 +67,36 @@ def _decode_image_to_path(data_url_or_b64: str) -> str:
     return path
 
 
+def _sanitize_arg(val: str) -> str:
+    """Collapse whitespace and shell-quote a string argument for safe command substitution."""
+    try:
+        # Collapse all whitespace (including newlines/tabs) to single spaces
+        val = re.sub(r"\s+", " ", val.strip())
+    except Exception:
+        pass
+    return shlex.quote(val)
+
+
 def _run_command(cmd_template: str, **kwargs) -> str:
     output_path = os.path.join(OUTPUT_DIR, f"{uuid.uuid4().hex}.mp4")
-    cmd = cmd_template.format(output=output_path, **kwargs)
-    proc = subprocess.run(cmd, shell=True)
+
+    # Shell-quote all string arguments to avoid command breaking on spaces/newlines/quotes
+    fmt_kwargs = {}
+    for k, v in kwargs.items():
+        if isinstance(v, str):
+            fmt_kwargs[k] = _sanitize_arg(v)
+        else:
+            fmt_kwargs[k] = v
+    fmt_kwargs["output"] = _sanitize_arg(output_path)
+
+    cmd = cmd_template.format(**fmt_kwargs)
+    proc = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     if proc.returncode != 0 or not os.path.exists(output_path):
-        raise RuntimeError(f"Command failed or output not found: {cmd}")
+        stdout = (proc.stdout or "").strip()
+        stderr = (proc.stderr or "").strip()
+        raise RuntimeError(
+            f"Command failed or output not found: {cmd}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        )
     return output_path
 
 
@@ -106,14 +133,39 @@ def ff2v(req: FF2VRequest, request: Request):
 
 @app.post("/flf2v")
 def flf2v(req: FLF2VRequest, request: Request):
-    cmd = os.getenv("WAN_CMD_FLF2V")
-    if not cmd:
-        raise HTTPException(status_code=503, detail="WAN_CMD_FLF2V is not set")
-    ff_path = _decode_image_to_path(req.first_frame)
-    lf_path = _decode_image_to_path(req.last_frame)
-    out_path = _run_exclusive(_run_command, cmd, prompt=req.prompt, first_frame=ff_path, last_frame=lf_path)
-    rel = f"/outputs/{os.path.basename(out_path)}"
-    return {"video_url": _to_abs_url(request, rel)}
+    cmd_flf2v = os.getenv("WAN_CMD_FLF2V")
+    cmd_ff2v = os.getenv("WAN_CMD_FF2V")
+    try:
+        ff_path = _decode_image_to_path(req.first_frame)
+        lf_path = _decode_image_to_path(req.last_frame)
+    except UnidentifiedImageError:
+        raise HTTPException(status_code=400, detail="Invalid first/last frame image data")
+
+    # Prefer FLF2V if configured; otherwise fall back to I2V (FF2V) using first frame only
+    if cmd_flf2v:
+        try:
+            out_path = _run_exclusive(_run_command, cmd_flf2v, prompt=req.prompt, first_frame=ff_path, last_frame=lf_path)
+            rel = f"/outputs/{os.path.basename(out_path)}"
+            return {"video_url": _to_abs_url(request, rel)}
+        except RuntimeError as e:
+            # Attempt fallback if FF2V command is available
+            if not cmd_ff2v:
+                raise HTTPException(status_code=500, detail=str(e))
+            try:
+                out_path = _run_exclusive(_run_command, cmd_ff2v, prompt=req.prompt, first_frame=ff_path)
+                rel = f"/outputs/{os.path.basename(out_path)}"
+                return {"video_url": _to_abs_url(request, rel)}
+            except RuntimeError as e2:
+                raise HTTPException(status_code=500, detail=str(e2))
+    else:
+        if not cmd_ff2v:
+            raise HTTPException(status_code=503, detail="Neither WAN_CMD_FLF2V nor WAN_CMD_FF2V is set")
+        try:
+            out_path = _run_exclusive(_run_command, cmd_ff2v, prompt=req.prompt, first_frame=ff_path)
+            rel = f"/outputs/{os.path.basename(out_path)}"
+            return {"video_url": _to_abs_url(request, rel)}
+        except RuntimeError as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 # Run with uv:
